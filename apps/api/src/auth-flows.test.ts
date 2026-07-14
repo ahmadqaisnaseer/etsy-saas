@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import type { Environment } from '@etsy-saas/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from './app.js';

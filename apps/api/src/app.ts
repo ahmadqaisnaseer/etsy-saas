@@ -127,10 +127,7 @@ export async function buildApp(deps: AppDependencies) {
       );
       const session = await establish(deps, registered.user.id, req);
       setCookie(reply, deps.env, session.token);
-      return reply.code(201).send({
-        ...session.value,
-        developmentVerificationToken: deps.env.APP_ENV === 'development' ? raw : undefined,
-      });
+      return reply.code(201).send(session.value);
     },
   );
   app.post(
