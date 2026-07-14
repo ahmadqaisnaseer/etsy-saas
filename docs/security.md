@@ -24,3 +24,9 @@ Before external availability, add email verification, password recovery with one
 ## Etsy boundary
 
 The `etsy_connections` table is a forward-compatible, tenant-scoped placeholder. It contains no credentials by default. Etsy work must begin with a separate threat model, OAuth state/PKCE design, least-scope review, encrypted token lifecycle, webhook signature validation, rate-limit strategy, sandbox testing, and explicit user authorization. None of that is active here.
+
+## Authentication phase review
+
+Email verification and password recovery use expiring, single-use token digests. Sensitive endpoints have dedicated rate limits and generic account-discovery responses. Password reset revokes every session; password change requires the current password and revokes other sessions. Session-management mutations are scoped by the authenticated user ID.
+
+The full threat-model review and residual limitations are recorded in [docs/security-reviews/authentication-phase.md](security-reviews/authentication-phase.md). No live email provider, Etsy connection, billing provider, AI service, or deployment capability is enabled.

@@ -74,3 +74,7 @@ docs/                  Architecture and security decisions
 ## Deliberate next steps
 
 Email verification, password reset, MFA, organization invitations, billing, and observability exporters should be implemented before public launch. Etsy OAuth must be a separate, reviewed milestone; the existing `etsy_connections` table is inert schema only and should store encrypted tokens through a managed KMS when that milestone begins.
+
+## Authentication and accounts
+
+The account phase provides registration, email verification through the development email adapter, login/logout, password recovery, profile/password management, safe session revocation, default workspace ownership, owner/admin/member roles, and structured security audit events. See [docs/authentication.md](docs/authentication.md) for behavior, configuration, migrations, testing, and extension points.

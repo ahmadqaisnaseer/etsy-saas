@@ -48,3 +48,9 @@ Object keys always start with `tenants/<tenant-id>/`. The storage adapter suppor
 ## Environment model
 
 The build is environment independent. Development uses Compose-provided PostgreSQL, Redis, and MinIO. Staging and production inject service addresses and secrets and run the same immutable image. `ETSY_INTEGRATION_ENABLED` is validated as the literal value `false`, causing startup to fail if someone attempts to enable it in this milestone.
+
+## Account lifecycle
+
+Registration atomically creates a global user identity, default tenant, owner membership, tenant settings, and audit event. Verification and password-reset tokens are random, single-use, expiring, and stored only as SHA-256 digests. Account endpoints resolve the active tenant exclusively from the authenticated server-side session and membership; browser tenant identifiers are not accepted.
+
+The development email adapter records messages in memory and performs no network delivery. A real provider is a future gated integration. Security audit events are tenant-scoped where applicable and protected by forced RLS.
