@@ -66,7 +66,13 @@ describe('authentication and account flows', () => {
   const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
   afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
   const make = async (auth: AuthRepository, email?: EmailProvider) => {
-    const app = await buildApp({ env, auth, email, readiness, logger: false });
+    const app = await buildApp({
+      env,
+      auth,
+      ...(email ? { email } : {}),
+      readiness,
+      logger: false,
+    });
     apps.push(app);
     return app;
   };
