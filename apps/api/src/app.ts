@@ -119,12 +119,7 @@ export async function buildApp(deps: AppDependencies) {
       const input = register.parse(req.body);
       const passwordHash = await hashPassword(input.password, deps.env.PASSWORD_PEPPER);
       const registered = await deps.auth.register(input, passwordHash);
-      await sendToken(
-        deps,
-        'verification',
-        registered.user.id,
-        registered.user.email,
-      );
+      await sendToken(deps, 'verification', registered.user.id, registered.user.email);
       await deps.auth.audit?.(
         'auth.verification.requested',
         registered.user.id,
