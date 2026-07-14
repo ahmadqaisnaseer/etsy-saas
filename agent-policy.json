@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "defaultBranch": "main",
+  "branchPattern": "^agent/[a-z0-9]+(?:-[a-z0-9]+)*$",
+  "delivery": {
+    "pullRequestState": "draft",
+    "automaticMerge": false,
+    "automaticDeployment": false
+  },
+  "workflow": [
+    "start_from_latest_main",
+    "create_dedicated_agent_branch",
+    "inspect_existing_architecture",
+    "reuse_existing_systems",
+    "run_required_checks",
+    "inspect_final_diff",
+    "open_draft_pull_request"
+  ],
+  "permissions": {
+    "alwaysAllowed": [
+      "repository_read",
+      "code_search",
+      "feature_branch_create",
+      "feature_branch_edit",
+      "lockfile_dependency_install",
+      "format",
+      "lint",
+      "typecheck",
+      "test",
+      "build",
+      "local_docker_validation",
+      "commit",
+      "feature_branch_push",
+      "draft_pull_request",
+      "documentation_update"
+    ],
+    "approvalRequired": [
+      "merge",
+      "staging_deployment",
+      "staging_migration",
+      "secret_access_or_change",
+      "dns_change",
+      "infrastructure_change",
+      "third_party_integration_enablement"
+    ],
+    "neverAutomatic": [
+      "production_deployment",
+      "production_migration",
+      "production_data_deletion",
+      "force_push_main",
+      "direct_commit_main",
+      "secret_exposure",
+      "etsy_listing_publish",
+      "customer_charge",
+      "security_weakening"
+    ]
+  },
+  "requiredChecks": [
+    "pnpm install --frozen-lockfile",
+    "pnpm format:check",
+    "pnpm lint",
+    "pnpm typecheck",
+    "pnpm test",
+    "pnpm test:integration",
+    "pnpm build",
+    "docker build ."
+  ],
+  "conditionalChecks": {
+    "database": [
+      "versioned_migration",
+      "migration_validation",
+      "tenant_isolation_tests",
+      "forced_rls_runtime_role_tests"
+    ],
+    "securitySensitive": ["security_agent_review"],
+    "deployment": ["devops_agent_review", "release_manager_review"]
+  },
+  "approvalGates": {
+    "merge": ["human_approval", "required_checks_pass"],
+    "stagingDeployment": ["human_approval", "devops_agent_review", "release_manager_review"],
+    "stagingMigration": [
+      "human_approval",
+      "database_agent_review",
+      "rollback_or_forward_recovery_plan"
+    ],
+    "securitySensitive": ["security_agent_review"],
+    "thirdPartyIntegration": [
+      "human_approval",
+      "security_agent_review",
+      "disabled_by_default_proof"
+    ]
+  },
+  "agents": {
+    "orchestrator": {
+      "playbook": "docs/agents/orchestrator.md",
+      "scopes": ["coordination", "policy", "cross_domain_handoff"]
+    },
+    "backend": {
+      "playbook": "docs/agents/backend.md",
+      "scopes": ["apps/api", "api_contracts", "server_authorization"]
+    },
+    "frontend": {
+      "playbook": "docs/agents/frontend.md",
+      "scopes": ["apps/web", "accessibility", "browser_state"]
+    },
+    "database": {
+      "playbook": "docs/agents/database.md",
+      "scopes": ["database", "migrations", "rls", "grants"]
+    },
+    "security": {
+      "playbook": "docs/agents/security.md",
+      "scopes": ["threat_model", "security_review", "security_tests"]
+    },
+    "qa": {
+      "playbook": "docs/agents/qa.md",
+      "scopes": ["test_strategy", "regression", "acceptance"]
+    },
+    "devops": {
+      "playbook": "docs/agents/devops.md",
+      "scopes": ["ci", "docker", "infrastructure_plans", "staging_plans"]
+    },
+    "etsyIntegration": {
+      "playbook": "docs/agents/etsy-integration.md",
+      "scopes": ["disabled_etsy_boundary", "oauth_design", "publish_safeguards"]
+    },
+    "billing": {
+      "playbook": "docs/agents/billing.md",
+      "scopes": ["disabled_billing_boundary", "ledger_design", "entitlements"]
+    },
+    "aiDesign": {
+      "playbook": "docs/agents/ai-design.md",
+      "scopes": ["disabled_ai_boundary", "provider_abstraction", "content_safety"]
+    },
+    "documentation": {
+      "playbook": "docs/agents/documentation.md",
+      "scopes": ["readme", "docs", "runbooks"]
+    },
+    "releaseManager": {
+      "playbook": "docs/agents/release-manager.md",
+      "scopes": ["release_readiness", "approvals", "rollback_coordination"]
+    }
+  },
+  "invariants": [
+    "tenant_context_is_server_derived",
+    "forced_rls_is_preserved",
+    "runtime_database_role_is_non_owner",
+    "secrets_are_never_committed_or_logged",
+    "third_party_integrations_remain_disabled_without_approval",
+    "agents_do_not_merge_or_deploy_without_explicit_human_approval"
+  ]
+}
