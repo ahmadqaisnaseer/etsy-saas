@@ -31,7 +31,7 @@ const register = z
   .object({
     firstName: name,
     lastName: name,
-    email: z.string().email().max(254),
+    email: z.string().trim().email().max(254),
     password,
     passwordConfirmation: z.string(),
     acceptedTerms: z.literal(true),
@@ -55,7 +55,7 @@ const register = z
         message: 'Choose a stronger password',
       });
   });
-const credentials = z.object({ email: z.string().email().max(254), password });
+const credentials = z.object({ email: z.string().trim().email().max(254), password });
 const token = z.object({ token: z.string().min(32).max(256) });
 const profile = z.object({ firstName: name, lastName: name });
 export type AppDependencies = {
@@ -190,7 +190,7 @@ export async function buildApp(deps: AppDependencies) {
     '/auth/forgot-password',
     { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
     async (req, reply) => {
-      const { email } = z.object({ email: z.string().email() }).parse(req.body);
+      const { email } = z.object({ email: z.string().trim().email() }).parse(req.body);
       const user = await deps.auth.findUserForLogin(email);
       if (user) {
         await sendToken(deps, 'reset', user.id, normalizeEmail(email));
