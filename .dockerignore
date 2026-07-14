@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+**/node_modules
+dist
+**/dist
+coverage
+.git
+.env
+.env.*.local
+outputs
+work
