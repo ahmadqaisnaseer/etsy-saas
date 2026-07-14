@@ -1,0 +1,17 @@
+{
+  "name": "@etsy-saas/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@etsy-saas/shared": "workspace:*",
+    "bullmq": "^5.53.0",
+    "pino": "^9.7.0"
+  }
+}
