@@ -112,4 +112,35 @@ describe('API', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json<{ user: { email: string } }>().user.email).toBe('owner@example.com');
   });
+
+  it('trusts one proxy hop and rejects untrusted staging hosts', async () => {
+    const stagingEnv: Environment = {
+      ...env,
+      APP_ENV: 'staging',
+      WEB_ORIGIN: 'https://staging.example.invalid',
+      APP_BASE_URL: 'https://staging.example.invalid',
+    };
+    const app = await buildApp({
+      env: stagingEnv,
+      auth: auth(),
+      readiness: { database: vi.fn(), redis: vi.fn(), storage: vi.fn() },
+      logger: false,
+    });
+    apps.push(app);
+
+    const rejected = await app.inject({
+      method: 'GET',
+      url: '/health/live',
+      headers: { host: 'unexpected.example.invalid' },
+    });
+    expect(rejected.statusCode).toBe(421);
+    expect(rejected.json()).toEqual({ error: 'HOST_NOT_ALLOWED' });
+
+    const accepted = await app.inject({
+      method: 'GET',
+      url: '/health/live',
+      headers: { host: 'staging.example.invalid' },
+    });
+    expect(accepted.statusCode).toBe(200);
+  });
 });

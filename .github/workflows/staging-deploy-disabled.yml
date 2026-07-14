@@ -1,0 +1,34 @@
+name: Manual staging deployment (disabled)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Reviewed commit SHA to deploy
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY-STAGING after human approval
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  deployment-template:
+    # Intentionally disabled. A human must configure a protected `staging`
+    # environment, add the approved VPS secrets, review this template, and
+    # remove this guard in a separate pull request before any deployment.
+    if: ${{ false }}
+    environment: staging
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Disabled safety guard
+        run: |
+          echo "Staging deployment is disabled until infrastructure approval and secrets provisioning."
+          exit 1

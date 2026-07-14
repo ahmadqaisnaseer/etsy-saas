@@ -269,10 +269,15 @@ export class Database implements AuthRepository {
     tenantId?: string,
     metadata: Record<string, unknown> = {},
   ) {
-    await this.pool.query(
-      `INSERT INTO security_audit_events(tenant_id,actor_user_id,event_name,metadata) VALUES($1,$2,$3,$4)`,
-      [tenantId ?? null, userId ?? null, event, metadata],
-    );
+    await this.transaction(async (client) => {
+      if (userId) await client.query("SELECT set_config('app.current_user_id',$1,true)", [userId]);
+      if (tenantId)
+        await client.query("SELECT set_config('app.current_tenant_id',$1,true)", [tenantId]);
+      await client.query(
+        `INSERT INTO security_audit_events(tenant_id,actor_user_id,event_name,metadata) VALUES($1,$2,$3,$4)`,
+        [tenantId ?? null, userId ?? null, event, metadata],
+      );
+    });
   }
   private async loadSession(
     client: PoolClient,

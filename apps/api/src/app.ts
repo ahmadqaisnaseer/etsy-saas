@@ -66,6 +66,8 @@ export type AppDependencies = {
   logger?: boolean;
 };
 export async function buildApp(deps: AppDependencies) {
+  const isProxyEnvironment = deps.env.APP_ENV === 'staging' || deps.env.APP_ENV === 'production';
+  const trustedHostname = new URL(deps.env.WEB_ORIGIN).hostname.toLowerCase();
   const app = Fastify({
     logger: deps.logger ?? {
       level: deps.env.LOG_LEVEL,
@@ -77,7 +79,7 @@ export async function buildApp(deps: AppDependencies) {
         'body.token',
       ],
     },
-    trustProxy: true,
+    trustProxy: isProxyEnvironment ? 1 : false,
     bodyLimit: 1_048_576,
     requestTimeout: 15_000,
   });
@@ -90,6 +92,21 @@ export async function buildApp(deps: AppDependencies) {
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
   app.addHook('onRequest', async (req, reply) => {
+    if (isProxyEnvironment) {
+      const forwardedHost = req.headers['x-forwarded-host'];
+      const rawHost =
+        (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) ?? req.headers.host;
+      let requestHostname = '';
+      try {
+        requestHostname = new URL(
+          `http://${rawHost?.split(',')[0]?.trim() ?? ''}`,
+        ).hostname.toLowerCase();
+      } catch {
+        return reply.code(421).send({ error: 'HOST_NOT_ALLOWED' });
+      }
+      if (requestHostname !== trustedHostname)
+        return reply.code(421).send({ error: 'HOST_NOT_ALLOWED' });
+    }
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return;
     const origin = req.headers.origin;
     if (origin && origin !== deps.env.WEB_ORIGIN)

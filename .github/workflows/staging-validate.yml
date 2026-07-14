@@ -1,0 +1,136 @@
+name: Staging configuration validation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/staging-*.yml'
+      - '.env.staging.example'
+      - 'Dockerfile'
+      - 'docker-compose.staging*.yml*'
+      - 'infrastructure/**'
+      - 'scripts/staging/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  configuration:
+    name: Compose, Nginx, and smoke tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate ephemeral CI-only environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          postgres_password="$(openssl rand -hex 24)"
+          app_password="$(openssl rand -hex 24)"
+          minio_user="ci$(openssl rand -hex 8)"
+          minio_password="$(openssl rand -hex 24)"
+          s3_access_key="app$(openssl rand -hex 8)"
+          s3_secret_key="$(openssl rand -hex 24)"
+          pepper="$(openssl rand -hex 32)"
+          cat > .env.staging.ci <<EOF
+          APP_ENV=staging
+          STAGING_SERVER_NAME=localhost
+          WEB_ORIGIN=https://localhost
+          APP_BASE_URL=https://localhost
+          POSTGRES_DB=etsy_saas
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=$postgres_password
+          APP_DATABASE_PASSWORD=$app_password
+          DATABASE_URL=postgresql://app:$app_password@postgres:5432/etsy_saas
+          DATABASE_ADMIN_URL=postgresql://postgres:$postgres_password@postgres:5432/etsy_saas
+          PASSWORD_PEPPER=$pepper
+          REDIS_URL=redis://redis:6379
+          MINIO_ROOT_USER=$minio_user
+          MINIO_ROOT_PASSWORD=$minio_password
+          S3_ACCESS_KEY=$s3_access_key
+          S3_SECRET_KEY=$s3_secret_key
+          S3_ENDPOINT=http://minio:9000
+          S3_REGION=us-east-1
+          S3_BUCKET=etsy-saas-staging
+          S3_FORCE_PATH_STYLE=true
+          LOG_LEVEL=info
+          SESSION_COOKIE_NAME=etsy_saas_session
+          SESSION_TTL_HOURS=168
+          VERIFICATION_TOKEN_TTL_MINUTES=60
+          PASSWORD_RESET_TOKEN_TTL_MINUTES=30
+          EMAIL_FROM_NAME="Etsy SaaS CI"
+          EMAIL_FROM_ADDRESS=noreply@staging.invalid
+          ETSY_INTEGRATION_ENABLED=false
+          EOF
+          mkdir -p .ci-certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost' \
+            -keyout .ci-certs/privkey.pem -out .ci-certs/fullchain.pem
+          echo "TLS_CERT_DIR=$PWD/.ci-certs" >> .env.staging.ci
+          chmod 600 .env.staging.ci
+          chmod 644 .ci-certs/fullchain.pem
+          chmod 640 .ci-certs/privkey.pem
+          sudo chown 101:101 .ci-certs/privkey.pem
+
+      - name: Validate environment and Compose model
+        env:
+          STAGING_ENV_FILE: .env.staging.ci
+        run: |
+          scripts/staging/validate-env.sh
+          docker compose --env-file .env.staging.ci \
+            -f docker-compose.staging.yml \
+            -f docker-compose.staging.https.yml.example config --quiet
+
+      - name: Validate shell scripts
+        run: |
+          shellcheck scripts/staging/*.sh infrastructure/postgres/init-staging.sh
+          scripts/staging/check-scope.sh
+
+      - name: Build staging images
+        run: |
+          docker compose --env-file .env.staging.ci \
+            -f docker-compose.staging.yml \
+            -f docker-compose.staging.https.yml.example build
+
+      - name: Run controlled migrations
+        env:
+          CONFIRM_STAGING_MIGRATION: 'yes'
+          STAGING_ENV_FILE: .env.staging.ci
+        run: scripts/staging/migrate.sh
+
+      - name: Start isolated staging stack
+        run: |
+          docker compose --env-file .env.staging.ci \
+            -f docker-compose.staging.yml \
+            -f docker-compose.staging.https.yml.example up -d --wait --wait-timeout 180
+
+      - name: Validate Nginx and run staging smoke tests
+        env:
+          CURL_INSECURE: '1'
+          STAGING_BASE_URL: https://localhost
+          STAGING_ENV_FILE: .env.staging.ci
+        run: scripts/staging/smoke.sh
+
+      - name: Show service state on failure
+        if: failure()
+        run: |
+          docker compose --env-file .env.staging.ci \
+            -f docker-compose.staging.yml \
+            -f docker-compose.staging.https.yml.example ps
+          docker compose --env-file .env.staging.ci \
+            -f docker-compose.staging.yml \
+            -f docker-compose.staging.https.yml.example logs --no-color --tail=200
+
+      - name: Remove CI staging stack
+        if: always()
+        run: |
+          docker compose --env-file .env.staging.ci \
+            -f docker-compose.staging.yml \
+            -f docker-compose.staging.https.yml.example down --volumes --remove-orphans
+          rm -rf .env.staging.ci .ci-certs
