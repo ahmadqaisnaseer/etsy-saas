@@ -16,6 +16,7 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
+COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages/shared ./packages/shared
 USER node
 EXPOSE 3000
@@ -27,6 +28,7 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 COPY --from=build /app/apps/worker/package.json ./apps/worker/package.json
+COPY --from=build /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=build /app/packages/shared ./packages/shared
 USER node
 CMD ["node", "apps/worker/dist/index.js"]
@@ -35,3 +37,7 @@ FROM nginx:1.27-alpine AS web
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 COPY infrastructure/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
+
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS web-staging
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+EXPOSE 8080 8443

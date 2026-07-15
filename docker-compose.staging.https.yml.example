@@ -1,0 +1,7 @@
+services:
+  web:
+    ports:
+      - '443:8443'
+    volumes:
+      - ./infrastructure/nginx/staging-https.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TLS_CERT_DIR:?set TLS_CERT_DIR}:/etc/nginx/certs:ro

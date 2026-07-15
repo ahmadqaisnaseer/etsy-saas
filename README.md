@@ -78,3 +78,7 @@ Email verification, password reset, MFA, organization invitations, billing, and 
 ## Authentication and accounts
 
 The account phase provides registration, email verification through the development email adapter, login/logout, password recovery, profile/password management, safe session revocation, default workspace ownership, owner/admin/member roles, and structured security audit events. See [docs/authentication.md](docs/authentication.md) for behavior, configuration, migrations, testing, and extension points.
+
+## Staging deployment preparation
+
+Phase 3 adds a staging-only Compose topology, HTTPS-ready Nginx configuration, controlled migrations, backup tooling, smoke tests, and non-deploying GitHub validation. No VPS, live secret, certificate, or external integration is connected. See [the staging runbook](docs/operations/staging.md) before any approved infrastructure work.

@@ -1,0 +1,231 @@
+name: etsy-saas-staging
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '5'
+
+x-app-environment: &app-environment
+  APP_ENV: staging
+  STAGING_SERVER_NAME: ${STAGING_SERVER_NAME:?set STAGING_SERVER_NAME}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  WEB_ORIGIN: ${WEB_ORIGIN:?set WEB_ORIGIN}
+  APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL}
+  API_PORT: '3000'
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+  REDIS_URL: redis://redis:6379
+  SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-etsy_saas_session}
+  SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+  VERIFICATION_TOKEN_TTL_MINUTES: ${VERIFICATION_TOKEN_TTL_MINUTES:-60}
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:-30}
+  PASSWORD_PEPPER: ${PASSWORD_PEPPER:?set PASSWORD_PEPPER}
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+  S3_FORCE_PATH_STYLE: 'true'
+  EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Etsy SaaS Staging}
+  EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-noreply@staging.invalid}
+  ETSY_INTEGRATION_ENABLED: 'false'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-etsy_saas}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:?set APP_DATABASE_PASSWORD}
+    expose: ['5432']
+    volumes:
+      - staging-postgres:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-staging.sh:/docker-entrypoint-initdb.d/001-roles.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+    cpus: 1.0
+    mem_limit: 1g
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1000']
+    expose: ['6379']
+    volumes:
+      - staging-redis:/data
+    networks: [backend]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    logging: *default-logging
+    cpus: 0.5
+    mem_limit: 512m
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    expose: ['9000']
+    volumes:
+      - staging-minio:/data
+    networks: [backend]
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+    cpus: 1.0
+    mem_limit: 1g
+
+  bucket-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    restart: 'no'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+    entrypoint: ['/bin/sh', '-ec']
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}";
+        mc mb --ignore-existing "local/$${S3_BUCKET}";
+        mc anonymous set none "local/$${S3_BUCKET}";
+        mc admin user add local "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}";
+        mc admin policy create local etsy-saas-app /policy/app-policy.json.template;
+        mc admin policy attach local etsy-saas-app --user "$${S3_ACCESS_KEY}"
+    volumes:
+      - ./infrastructure/minio/app-policy.json.template:/policy/app-policy.json.template:ro
+    depends_on:
+      minio: { condition: service_healthy }
+    networks: [backend]
+    logging: *default-logging
+    cpus: 0.25
+    mem_limit: 128m
+
+  migrate:
+    profiles: [operations]
+    build:
+      context: .
+      target: build
+    restart: 'no'
+    command: ['pnpm', 'db:migrate']
+    environment:
+      DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL:?set DATABASE_ADMIN_URL}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend]
+    logging: *default-logging
+    cpus: 0.5
+    mem_limit: 512m
+
+  storage-client:
+    profiles: [operations]
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    entrypoint: ['/bin/sh']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+    networks: [backend]
+    logging: *default-logging
+    cpus: 0.25
+    mem_limit: 128m
+
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment: *app-environment
+    expose: ['3000']
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      bucket-init: { condition: service_completed_successfully }
+    networks: [backend]
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/health/ready',{headers:{'x-forwarded-host':process.env.STAGING_SERVER_NAME}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *default-logging
+    cpus: 1.0
+    mem_limit: 768m
+
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    environment: *app-environment
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      bucket-init: { condition: service_completed_successfully }
+    networks: [backend]
+    healthcheck:
+      test: ['CMD', 'node', '-e', 'process.kill(1, 0)']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+    cpus: 1.0
+    mem_limit: 768m
+
+  web:
+    build:
+      context: .
+      target: web-staging
+    restart: unless-stopped
+    environment:
+      STAGING_SERVER_NAME: ${STAGING_SERVER_NAME:?set STAGING_SERVER_NAME}
+      NGINX_ENVSUBST_FILTER: ^STAGING_SERVER_NAME$
+    ports: ['80:8080']
+    volumes:
+      - ./infrastructure/nginx/staging-http.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [edge, backend]
+    healthcheck:
+      test: ['CMD-SHELL', 'nginx -t >/dev/null 2>&1 && kill -0 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    cpus: 0.5
+    mem_limit: 256m
+
+networks:
+  edge:
+  backend:
+    internal: true
+
+volumes:
+  staging-postgres:
+  staging-redis:
+  staging-minio:
